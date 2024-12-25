@@ -1,7 +1,7 @@
 pub struct ChatRequest {
-    message: String,
+    pub message: String,
 }
 
 pub struct ChatResponse {
-    response: String,
+    pub response: String,
 }
