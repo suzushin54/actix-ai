@@ -1,18 +1,12 @@
 use crate::core::entities::{ChatRequest, ChatResponse};
-use std::collections::HashMap;
+use crate::core::port::AiPort;
+use async_trait::async_trait;
 
-pub fn ai_interface(req: ChatRequest) -> ChatResponse { 
-    let mut ress = HashMap::new();
-    ress.insert("Hello", "Hi! What's up?");
-    ress.insert("Good bye", "See you tomorrow!");
-
-    let res = ress
-    .iter()
-    .find(|(key, _)| req.message.contains(*key))
-    .map(|(_, value)| value.to_string())
-    .unwrap_or_else(|| "Sorry, I don't understand.".to_string());
-
-    ChatResponse {
-        response: res,
+pub async fn ai_interface<P: AiPort>(req: ChatRequest, ai_port: &P) -> ChatResponse { 
+    match ai_port.send_message(&req.message).await {
+        Ok(response) => ChatResponse { response },
+        Err(err) => ChatResponse {
+            response: format!("Error: {}", err),
+        },
     }
 }
