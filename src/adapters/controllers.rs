@@ -1,30 +1,12 @@
-use actix_web::{web, Responder, HttpResponse};
-use crate::core::usecase::ai_interface;
+use actix_web::{web, HttpResponse, Responder};
 use crate::core::entities::ChatRequest;
-use serde::{Deserialize, Serialize};
+use crate::core::usecase::ai_interface;
+use crate::adapters::gemini::GeminiAdapter;
 
-#[derive(Deserialize)]
-pub struct HttpChatRequest {
-    pub message: String,
-}
-
-#[derive(Serialize)]
-pub struct HttpChatResponse {
-    pub response: String,
-}
-
-pub async fn chat(req: web::Json<HttpChatRequest>) -> impl Responder {
-    let chat_request = ChatRequest {
-        message: req.message.clone(),
-    };
-
-    let chat_response = ai_interface(chat_request);
-
-    HttpResponse::Ok().json(HttpChatResponse {
-        response: chat_response.response,
-    })
-}
-
-pub async fn status() -> impl Responder {
-    HttpResponse::Ok().body("running!")
+pub async fn handle_chat(
+    chat_req: web::Json<ChatRequest>,
+    gemini_adapter: web::Data<GeminiAdapter>,
+) -> impl Responder {
+    let response = ai_interface(chat_req.into_inner(), &*gemini_adapter).await;
+    HttpResponse::Ok().json(response)
 }
