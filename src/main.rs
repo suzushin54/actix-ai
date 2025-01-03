@@ -7,7 +7,7 @@ use adapters::controllers::handle_chat;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let gemini_adapter = GeminiAdapter::new("API_KEY".to_string());
+    let gemini_adapter = GeminiAdapter::new();
 
     HttpServer::new(move || {
         App::new()
