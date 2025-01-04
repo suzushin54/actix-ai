@@ -39,6 +39,12 @@ struct GenerateContentRequest<'a> {
 
 #[derive(Deserialize)]
 struct GenerateContentResponse {
+    candidates: Vec<Candidate>,
+}
+
+#[derive(Deserialize)]
+struct Candidate {
+    content: String,
 }
 
 #[async_trait]
@@ -60,12 +66,20 @@ impl AiPort for GeminiAdapter {
             Ok(resp) if resp.status().is_success() => {
                 match resp.json::<GenerateContentResponse>().await {
                     Ok(parsed) => {
-                        Ok("Success".to_string())
+                        if let Some(candidate) = parsed.candidates.get(0) {
+                            Ok(candidate.content.clone())
+                        } else {
+                            Err("No candidates received".to_string())
+                        }
                     }
                     Err(_) => Err("Failed to parse response".to_string()),
                 }
             }
-            Ok(resp) => Err(format!("API Error: {}", resp.status())),
+            Ok(resp) => {
+                let status = resp.status();
+                let error_body = resp.text().await.unwrap_or("No error body".to_string());
+                Err(format!("API Error: {}, Body: {}", status, error_body))
+            }
             Err(err) => Err(format!("Request Error: {}", err)),
         }
     }
