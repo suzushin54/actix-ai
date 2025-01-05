@@ -1,15 +1,13 @@
 use async_trait::async_trait;
-use reqwest::Client;
-use serde::{Deserialize, Serialize};
-use crate::core::port::AiPort;
 use dotenv::dotenv;
 use std::env;
+use google_generative_ai_rs::v1::api::Client;
+use google_generative_ai_rs::v1::gemini::{Content, Role, Part, request::Request};
 
-#[derive(Clone)]
+use crate::core::port::AiPort;
+
 pub struct GeminiAdapter {
-    api_key: String,
     client: Client,
-    endpoint: String,
 }
 
 impl GeminiAdapter {
@@ -17,70 +15,61 @@ impl GeminiAdapter {
         dotenv().ok();
 
         let api_key = env::var("API_KEY").expect("API_KEY must be set");
-        let project_id = env::var("PROJECT_ID").expect("PROJECT_ID must be set");
-        let location = env::var("LOCATION").expect("LOCATION must be set");
-        let model_id = env::var("MODEL_ID").expect("MODEL_ID must be set");
-
-        Self {
-            api_key,
-            client: Client::new(),
-            endpoint: format!(
-                "https://{}-aiplatform.googleapis.com/v1/projects/{}/locations/{}/publishers/google/models/{}:generateContent",
-                location, project_id, location, model_id
-            ),
-        }
+        
+        let client = Client::new(api_key);
+        Self { client }
     }
 }
 
-#[derive(Serialize)]
-struct GenerateContentRequest<'a> {
-    contents: Vec<&'a str>,
-}
-
-#[derive(Deserialize)]
-struct GenerateContentResponse {
-    candidates: Vec<Candidate>,
-}
-
-#[derive(Deserialize)]
-struct Candidate {
-    content: String,
+impl Clone for GeminiAdapter {
+    fn clone(&self) -> Self {
+        dotenv().ok();
+        let api_key = env::var("API_KEY").expect("API_KEY must be set");
+        Self {
+            client: Client::new(api_key),
+        }
+    }
 }
 
 #[async_trait]
 impl AiPort for GeminiAdapter {
     async fn send_message(&self, message: &str) -> Result<String, String> {
-        let request_body = GenerateContentRequest {
-            contents: vec![message],
+        let part = Part {
+            text: Some(message.to_string()),
+            inline_data: None,
+            file_data: None,
+            video_metadata: None,
+        };
+        let content = Content {
+            role: Role::User, 
+            parts: vec![part],
+        };
+        let request = Request {
+            contents: vec![content],
+            tools: vec![], 
+            safety_settings: vec![],
+            generation_config: None,
         };
 
-        let response = self
-        .client
-        .post(&self.endpoint)
-        .bearer_auth(&self.api_key)
-        .json(&request_body)
-        .send()
-        .await;
+        match self.client.post(30, &request).await {
+            Ok(post_result) => match post_result.rest() {
+                Some(response) => {
+                    if let Some(candidate) = response.candidates.get(0) {
+                        let output_parts: Vec<String> = candidate
+                            .content
+                            .parts
+                            .iter()
+                            .filter_map(|part| part.text.clone())
+                            .collect();
 
-        match response {
-            Ok(resp) if resp.status().is_success() => {
-                match resp.json::<GenerateContentResponse>().await {
-                    Ok(parsed) => {
-                        if let Some(candidate) = parsed.candidates.get(0) {
-                            Ok(candidate.content.clone())
-                        } else {
-                            Err("No candidates received".to_string())
-                        }
+                        Ok(output_parts.join(" ")) 
+                    } else {
+                        Err("No candidates received".to_string())
                     }
-                    Err(_) => Err("Failed to parse response".to_string()),
-                }
-            }
-            Ok(resp) => {
-                let status = resp.status();
-                let error_body = resp.text().await.unwrap_or("No error body".to_string());
-                Err(format!("API Error: {}, Body: {}", status, error_body))
-            }
-            Err(err) => Err(format!("Request Error: {}", err)),
+                },
+                None => Err("No REST response received".to_string()),
+            },
+            Err(err) => Err(format!("API request failed: {}", err)),
         }
     }
 }
